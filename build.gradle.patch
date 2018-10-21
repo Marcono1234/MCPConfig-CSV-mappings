@@ -1,0 +1,53 @@
+@@ -26,6 +26,13 @@
+ import net.minecraftforge.mappingverifier.MappingVerifier
+ import net.minecraftforge.mcpconfig.tasks.*
+ import uk.jamierocks.propatcher.task.*
++// Marcono1234: csv
++import java.nio.file.Paths
++import csv_mappings.applier.CsvApplierTask
++import csv_mappings.applier.ProjectType
++import csv_mappings.downloader.CsvDownloaderTask
++import csv_mappings.downloader.MinecraftVersion
++//
+ 
+ plugins {
+     id 'de.undercouch.download' version '3.3.0'
+@@ -752,7 +759,38 @@
+                 projectMakePatches.dependsOn "project${child.name}MakePatches"
+             }
+         }
++        
++        // Marcono1234: csv
++        def projectTypeValue = {
++            switch (child.name) {
++                case "Client":
++                    return ProjectType.CLIENT;
++                case "Server":
++                    return ProjectType.SERVER;
++                case "Joined":
++                    return ProjectType.JOINED;
++                default:
++                    throw new IllegalArgumentException(String.format("Project with name '%s' is unknown", child.name));
++            }
++        }()
++        
++        task "project${child.name}ApplyCsvs"(type: CsvApplierTask) {
++            projectType projectTypeValue
++            setCsvDirectory new File(PATH_VERSION, 'mapping_csvs').toPath()
++            setSrcDirectory new File(dir, 'src/main/java').toPath()
++            setSrcOutDirectory new File(dir, 'src_csv/main/java').toPath()
++        }
++        //
++    }
++    
++    // Marcono1234: csv
++    if (!project.version.contains("w")) {
++        task "downloadCsvs"(type: CsvDownloaderTask) {
++            setOutDirectory Paths.get(PATH_VERSION, "mapping_csvs")
++            version MinecraftVersion.fromString(project.version.replaceAll("-pre.*", ""))
++        }
+     }
++    //
+    
+     task generateConfiguration(type: SingleFileOutput) {
+         inputs.property('config', CONFIG)
