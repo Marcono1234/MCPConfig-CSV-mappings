@@ -75,7 +75,11 @@ public class Mapper<E extends Exception> {
             @Override
             protected void performInternal(final MappingProvider mappingProvider, final Matcher matcher, final StringBuilder stringBuilder) {
                 replaceName(mappingProvider::getMethodMapping, matcher, stringBuilder);
-                insertDocumentation(mappingProvider::getMethodDoc, matcher, stringBuilder);
+                
+                // Only insert documentation if method is not overriding
+                if (matcher.group(RegexData.OVERRIDE_GROUP_NAME) == null) {
+                    insertDocumentation(mappingProvider::getMethodDoc, matcher, stringBuilder);
+                }
             }
         }
         ;
@@ -95,6 +99,7 @@ public class Mapper<E extends Exception> {
             private static final String PARAM_GROUP_NAME = "param";
             private static final String LINE_BREAK_GROUP_NAME = "lineBreak";
             private static final String INDENTATION_GROUP_NAME = "indent";
+            private static final String OVERRIDE_GROUP_NAME = "override";
             private static final String FIELD_DECLARATION_GROUP_NAME = FIELD_GROUP_NAME + "Decl";
             private static final String METHOD_DECLARATION_GROUP_NAME = METHOD_GROUP_NAME + "Decl";
             
@@ -103,13 +108,20 @@ public class Mapper<E extends Exception> {
                 final String fieldRegex = "field_[0-9]+_[a-zA-Z_]+";
                 final String methodRegex = "func_[0-9]+_[a-zA-Z_]+";
                 final String paramRegex = "p_[\\w]+_\\d+_";
-                final String indentationRegex = " {4}|\\t";
+                final String lineBreakRegex = "\\R";
+                // 3 spaces because that is default value of fernflower
+                final String indentationRegex = " {3,4}|\\t";
+                final String lineStartRegex = "(?:" + lineBreakRegex + ")(?:" + indentationRegex + ")";
                 
                 /*
                  * Don't add documentation for overridden methods, checked for fields as well, 
                  * but should not matter
                  */
-                regexes.add(createRegexGroup("(?<!@Override)\\R", LINE_BREAK_GROUP_NAME)
+                regexes.add(
+                    "(?:" + lineStartRegex + createRegexGroup("@Override", OVERRIDE_GROUP_NAME) + ")?"
+                    // Annotations
+                    + "(?:" + lineStartRegex + "@.+)*"
+                    + createRegexGroup(lineBreakRegex, LINE_BREAK_GROUP_NAME)
                     + createRegexGroup(indentationRegex, INDENTATION_GROUP_NAME)
                     + "(?:[\\w$.\\[\\]]+ )*"
                     + createRegexNonCapturingEither(Arrays.asList(
@@ -348,21 +360,36 @@ public class Mapper<E extends Exception> {
         System.out.println(MappingType.RegexData.PATTERN.matcher("  p_a_1_").find());
         
         final String fieldName = "field_1_a";
-        final StringBuilder stringBuilder = new StringBuilder("text\r\n    a$a[]. " + fieldName + ";");
+        final String methodName = "func_1_a";
+        final String lineStart = "\r\n    ";
+        final StringBuilder stringBuilder = new StringBuilder("text" + lineStart + "a$a[]. " + fieldName + ";");
+        stringBuilder.append(lineStart + "private void " + methodName + "(");
+        stringBuilder.append(lineStart + lineStart + "@Test" + lineStart + "@Override" + lineStart + "private void " + methodName + " (");
+        stringBuilder.append(lineStart + lineStart + "@Test" + lineStart + "private void " + methodName + "(");
+        
         final Matcher matcher = MappingType.RegexData.PATTERN.matcher(stringBuilder.toString());
-        matcher.find();
         
         final Map<String, MappingWithDoc> fieldMappings = new HashMap<>();
         fieldMappings.put(fieldName, new MappingWithDoc("newName", "Returns the minimal value of enchantability needed on the enchantment level passed."));
-        final MappingProvider mappingProvider = new MappingProvider(fieldMappings, Collections.emptyMap(), Collections.emptyMap());
+        final Map<String, MappingWithDoc> methodMappings = new HashMap<>();
+        methodMappings.put(methodName, new MappingWithDoc("newMethod", "Some documentation"));
         
-        for (final MappingType mappingType : MappingType.VALUES_LIST ) {
-            final boolean applies = mappingType.perform(mappingProvider, matcher, stringBuilder);
+        final MappingProvider mappingProvider = new MappingProvider(fieldMappings, methodMappings, Collections.emptyMap());
+        
+        while (matcher.find()) {
+            final int offsetFromEnd = stringBuilder.length() - matcher.end();
             
-            if (applies) {
-                System.out.println("Applied: " + mappingType);
-                break;
+            for (final MappingType mappingType : MappingType.VALUES_LIST ) {
+                final boolean applies = mappingType.perform(mappingProvider, matcher, stringBuilder);
+                
+                if (applies) {
+                    System.out.println("Applied: " + mappingType);
+                    break;
+                }
             }
+            
+            matcher.reset(stringBuilder.toString());
+            matcher.region(stringBuilder.length() - offsetFromEnd, stringBuilder.length());
         }
         
         System.out.println(stringBuilder.toString());
